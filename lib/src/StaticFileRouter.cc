@@ -20,13 +20,13 @@
 #include <iostream>
 #include <algorithm>
 #include <fcntl.h>
-#ifndef _WIN32
-#include <sys/file.h>
+#if __cplusplus >= 201703L || (defined _MSC_VER && _MSC_VER > 1900)
+#include <filesystem>
+using namespace std::filesystem;
 #else
-#define S_ISREG(m) (((m)&0170000) == (0100000))
-#define S_ISDIR(m) (((m)&0170000) == (0040000))
+#include <boost/filesystem.hpp>
+using namespace boost::filesystem;
 #endif
-#include <sys/stat.h>
 
 using namespace drogon;
 
@@ -230,18 +230,22 @@ void StaticFileRouter::sendStaticFileResponse(
         }
         else
         {
-            struct stat fileStat;
+            path p(filePath);
             LOG_TRACE << "enabled LastModify";
-            if (stat(filePath.c_str(), &fileStat) == 0 &&
-                S_ISREG(fileStat.st_mode))
+            if (exists(p) && !is_directory(p))
             {
                 fileExists = true;
-                LOG_TRACE << "last modify time:" << fileStat.st_mtime;
                 struct tm tm1;
-#ifdef _WIN32
-                gmtime_s(&tm1, &fileStat.st_mtime);
+#if __cplusplus >= 201703L || (defined _MSC_VER && _MSC_VER > 1900)
+                auto ftime = last_write_time(p);
+                auto cftime = decltype(ftime)::clock::to_time_t(ftime);
 #else
-                gmtime_r(&fileStat.st_mtime, &tm1);
+                auto cftime = last_write_time(p);
+#endif
+#ifdef _WIN32
+                gmtime_s(&tm1, &cftime);
+#else
+                gmtime_r(&cftime, &tm1);
 #endif
                 timeStr.resize(64);
                 auto len = strftime((char *)timeStr.data(),
@@ -280,9 +284,8 @@ void StaticFileRouter::sendStaticFileResponse(
     }
     if (!fileExists)
     {
-        struct stat fileStat;
-        if (stat(filePath.c_str(), &fileStat) != 0 ||
-            !S_ISREG(fileStat.st_mode))
+        path p(filePath);
+        if (!exists(p) || is_directory(p))
         {
             callback(HttpResponse::newNotFoundResponse());
             return;
@@ -295,9 +298,8 @@ void StaticFileRouter::sendStaticFileResponse(
     {
         // Find compressed file first.
         auto brFileName = filePath + ".br";
-        struct stat filestat;
-        if (stat(brFileName.c_str(), &filestat) == 0 &&
-            S_ISREG(filestat.st_mode))
+        path p(brFileName);
+        if (exists(p) && !is_directory(p))
         {
             resp =
                 HttpResponse::newFileResponse(brFileName,
@@ -311,9 +313,8 @@ void StaticFileRouter::sendStaticFileResponse(
     {
         // Find compressed file first.
         auto gzipFileName = filePath + ".gz";
-        struct stat filestat;
-        if (stat(gzipFileName.c_str(), &filestat) == 0 &&
-            S_ISREG(filestat.st_mode))
+        path p(gzipFileName);
+        if (exists(p) && !is_directory(p))
         {
             resp =
                 HttpResponse::newFileResponse(gzipFileName,

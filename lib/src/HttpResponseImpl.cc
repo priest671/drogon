@@ -20,7 +20,13 @@
 #include <fstream>
 #include <memory>
 #include <stdio.h>
-#include <sys/stat.h>
+#if __cplusplus >= 201703L || (defined _MSC_VER && _MSC_VER > 1900)
+#include <filesystem>
+using namespace std::filesystem;
+#else
+#include <boost/filesystem.hpp>
+using namespace boost::filesystem;
+#endif
 #include <trantor/utils/Logger.h>
 
 using namespace trantor;
@@ -271,12 +277,12 @@ void HttpResponseImpl::makeHeaderString(trantor::MsgBuffer &buffer)
             len = snprintf(buffer.beginWrite(),
                            buffer.writableBytes(),
                            "Content-Length: %lu\r\n",
-                           static_cast<unsigned long>(bodyLength));
+                           bodyLength);
         }
         else
         {
-            struct stat filestat;
-            if (stat(sendfileName_.data(), &filestat) < 0)
+            path p(sendfileName_);
+            if (!exists(p)||is_directory(p))
             {
                 LOG_SYSERR << sendfileName_ << " stat error";
                 return;
@@ -284,7 +290,7 @@ void HttpResponseImpl::makeHeaderString(trantor::MsgBuffer &buffer)
             len = snprintf(buffer.beginWrite(),
                            buffer.writableBytes(),
                            "Content-Length: %lu\r\n",
-                           static_cast<unsigned long>(filestat.st_size));
+                           file_size(p));
         }
         buffer.hasWritten(len);
         if (headers_.find("Connection") == headers_.end())
